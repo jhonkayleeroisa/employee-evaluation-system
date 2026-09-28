@@ -1,0 +1,83 @@
+const { v4: uuidv4 } = require('uuid');
+const db = require('../db/connection');
+const { sendEmail } = require('./emailService');
+
+const generateEvaluationToken = () => {
+  return uuidv4();
+};
+
+const sendEvaluationEmails = async (assignmentId, cycleId, evaluatorId, employeeId, token) => {
+  const assignmentQuery = `
+    SELECT a.*, e.firstName AS evaluatorFirstName, e.lastName AS evaluatorLastName, e.email AS evaluatorEmail,
+           emp.firstName AS employeeFirstName, emp.lastName AS employeeLastName, emp.email AS employeeEmail,
+           c.name AS cycleName
+    FROM evaluation_assignments a
+    INNER JOIN evaluators e ON a.evaluatorId = e.id
+    INNER JOIN employees emp ON a.employeeId = emp.id
+    INNER JOIN evaluation_cycles c ON a.evaluationCycleId = c.id
+    WHERE a.id = ?
+  `;
+
+  return new Promise((resolve, reject) => {
+    db.get(assignmentQuery, [assignmentId], async (err, assignment) => {
+      if (err) {
+        return reject(err);
+      }
+
+      if (!assignment) {
+        return reject(new Error('Evaluation assignment not found'));
+      }
+
+      const evaluationLink = `${process.env.APP_BASE_URL || 'http://localhost:3000'}/evaluation/${token}`;
+      const subject = `Evaluation Request: ${assignment.employeeFirstName} ${assignment.employeeLastName}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2>Performance Evaluation Request</h2>
+          <p>Hello ${assignment.evaluatorFirstName} ${assignment.evaluatorLastName},</p>
+          <p>You have been assigned to evaluate <strong>${assignment.employeeFirstName} ${assignment.employeeLastName}</strong> for the <strong>${assignment.cycleName}</strong> cycle.</p>
+          <p>Please complete the evaluation form by clicking the button below:</p>
+          <p>
+            <a href="${evaluationLink}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 20px; text-decoration: none; border-radius: 8px;">
+              Complete Evaluation
+            </a>
+          </p>
+          <p>Evaluation token: <strong>${token}</strong></p>
+          <p>Thank you.</p>
+        </div>
+      `;
+
+      const text = `Hello ${assignment.evaluatorFirstName} ${assignment.evaluatorLastName},\n\nYou have been assigned to evaluate ${assignment.employeeFirstName} ${assignment.employeeLastName} for the ${assignment.cycleName} cycle.\n\nPlease complete the evaluation at: ${evaluationLink}\n\nToken: ${token}`;
+
+      try {
+        const emailResult = await sendEmail({
+          to: assignment.evaluatorEmail,
+          subject,
+          html,
+          text,
+        });
+
+        const notificationId = uuidv4();
+        const status = emailResult.success ? 'sent' : 'failed';
+
+        db.run(
+          `INSERT INTO email_notifications (id, evaluationAssignmentId, recipientEmail, subject, status, sentAt, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [notificationId, assignmentId, assignment.evaluatorEmail, subject, status, new Date().toISOString()],
+          (error) => {
+            if (error) {
+              console.error('Error saving notification:', error.message);
+            }
+          }
+        );
+
+        resolve(emailResult);
+      } catch (emailError) {
+        reject(emailError);
+      }
+    });
+  });
+};
+
+module.exports = { generateEvaluationToken, sendEvaluationEmails };
+
+
