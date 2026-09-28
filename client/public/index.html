@@ -1,0 +1,65 @@
+import React, { useEffect, useState } from 'react';
+import api from '../services/api';
+
+function ReportsPage() {
+  const [assignments, setAssignments] = useState([]);
+
+  useEffect(() => {
+    const fetchAssignments = async () => {
+      try {
+        const cyclesRes = await api.get('/evaluations/cycles');
+        const cycle = cyclesRes.data[0];
+        if (cycle) {
+          const res = await api.get(`/evaluations/assignments/${cycle.id}`);
+          setAssignments(res.data);
+        }
+      } catch (error) {
+        console.error('Error fetching reports:', error);
+      }
+    };
+
+    fetchAssignments();
+  }, []);
+
+  return (
+    <div style={{ padding: 30 }}>
+      <h2>Evaluation Reports</h2>
+
+      <div style={{ background: 'white', borderRadius: 16, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ background: '#f8fafc' }}>
+            <tr>
+              <th style={thStyle}>Evaluator</th>
+              <th style={thStyle}>Employee</th>
+              <th style={thStyle}>Status</th>
+              <th style={thStyle}>Submitted</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assignments.map((assignment) => (
+              <tr key={assignment.id}>
+                <td style={tdStyle}>{assignment.evaluatorFirstName} {assignment.evaluatorLastName}</td>
+                <td style={tdStyle}>{assignment.employeeFirstName} {assignment.employeeLastName}</td>
+                <td style={tdStyle}>{assignment.status}</td>
+                <td style={tdStyle}>{assignment.submittedAt || 'Pending'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const thStyle = {
+  textAlign: 'left',
+  padding: '14px 16px',
+  borderBottom: '1px solid #e2e8f0',
+};
+
+const tdStyle = {
+  padding: '14px 16px',
+  borderBottom: '1px solid #e2e8f0',
+};
+
+export default ReportsPage;
